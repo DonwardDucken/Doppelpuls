@@ -105,8 +105,7 @@ const sketch = (p) => {
 
     let scoreFont;
     let layer; //für den Frambuffer
-    let fusionShader; //für die Shader
-    let fusionLayer;
+    //let fusionShader; //für die Shader
 
 
 
@@ -482,48 +481,6 @@ const sketch = (p) => {
         p.fill(col[0],col[1],col[2],1);
         drawSmoothCircle(x,y,r*2);
     }
-
-    function toShaderPosition(pos) {
-        return [
-            pos.x + fusionLayer.width / 2,
-            pos.y + fusionLayer.height / 2
-        ];
-    }
-
-    function drawFusionShader() {
-        if (!fusionShader || !fusionLayer) return;
-
-        const distance = p.dist(posMutter.x, posMutter.y, posKind.x, posKind.y);
-        const closeness = p.constrain(1 - distance / 260, 0, 1);
-        const intensity = p.max(fusionProgress, closeness);
-
-        if (intensity <= 0.01) return;
-
-        fusionLayer.clear();
-        fusionLayer.shader(fusionShader);
-
-        fusionShader.setUniform("uResolution", [
-            fusionLayer.width,
-            fusionLayer.height
-        ]);
-
-        fusionShader.setUniform("uRadius", 85 + intensity * 35);
-        fusionShader.setUniform("uIntensity", intensity);
-        fusionShader.setUniform("uMutter", toShaderPosition(posMutter));
-        fusionShader.setUniform("uKind", toShaderPosition(posKind));
-
-        fusionLayer.noStroke();
-        fusionLayer.rect(-1, -1, 2, 2);
-
-        fusionLayer.resetShader();
-
-        p.push();
-        p.blendMode(p.ADD);
-        p.resetShader();
-        p.imageMode(p.CENTER);
-        p.image(fusionLayer, 0, 0, p.width, p.height);
-        p.pop();
-    }
     // =============================================
     // FUSION TARGET (WEBGL VERSION)
     // =============================================
@@ -629,13 +586,7 @@ const sketch = (p) => {
     // ============================================================
     p.setup = () => {
         p.createCanvas(p.windowWidth, p.windowHeight, p.WEBGL);
-        pixelDensity(1);
-        layer = p.createFramebuffer();
-        fusionLayer = p.createGraphics(p.windowWidth, p.windowHeight, p.WEBGL);
-        fusionLayer.pixelDensity(1);
-        fusionLayer.colorMode(p.RGB, 255, 255, 255, 1);
-        fusionLayer.noStroke();
-        fusionShader = fusionLayer.createShader(vertexShaderSource, fragmentShaderSource);
+        //pixelDensity(1);
         p.textFont(scoreFont); //für webgl angepasst
         // alpha range 0..1 so the original rgba values port over unchanged
         p.colorMode(p.RGB, 255, 255, 255, 1);
@@ -657,51 +608,13 @@ const sketch = (p) => {
         scoreFont = p.loadFont(
             "https://cdnjs.cloudflare.com/ajax/libs/topcoat/0.8.0/font/SourceCodePro-Regular.otf"
         );
-        //fusionShader = p.createShader(vertexShaderCircle, fragmentShaderCircle);
         //fusionShader = p.loadShader('vertexShaderCircle.vert','fragmentShaderCircle.frag');
     };
-    const vertexShaderSource = `
-#ifdef GL_ES
-precision mediump float;
-#endif
-
-attribute vec3 aPosition;
-attribute vec2 aTexCoord;
-
-varying vec2 vTexCoord;
-
-void main() {
-    vTexCoord = aTexCoord;
-
-    vec4 positionVec4 = vec4(aPosition, 1.0);
-    positionVec4.xy = positionVec4.xy * 2.0 - 1.0;
-
-    gl_Position = positionVec4;
-}
-`;
-    const fragmentShaderSource = `
-#ifdef GL_ES
-precision mediump float;
-#endif
-
-varying vec2 vTexCoord;
-
-void main() {
-    gl_FragColor = vec4(vTexCoord.x, vTexCoord.y, 1.0, 0.6);
-}
-`;
 
     p.windowResized = () => {
         // a resize event can fire before setup() initialised the state
         if (!posMutter || !posKind) return;
-        p.resizeCanvas(p.windowWidth, p.windowHeight);
-
-        fusionLayer = p.createGraphics(p.windowWidth, p.windowHeight, p.WEBGL);
-        fusionLayer.pixelDensity(1);
-        fusionLayer.colorMode(p.RGB, 255, 255, 255, 1);
-        fusionLayer.noStroke();
-        fusionShader = fusionLayer.createShader(vertexShaderSource, fragmentShaderSource);
-
+        p.resizeCanvas(p.windowWidth, p.windowHeight, p.WEBGL);
         startMutter = {x: -p.width * 0.3,y: p.height * 0.35}; //WEBGL
         startKind = {x: p.width * 0.3,y: p.height * 0.35}; //WEBGL
         // keep emitters inside the new bounds (fixes off-screen drift on resize)
@@ -912,9 +825,6 @@ void main() {
                 const distK = p.dist(posKind.x,   posKind.y,   fusionTarget.x, fusionTarget.y);
                 const bothNear = distM < CONFIG.fusion.FUSION_TRIGGER_DIST && distK < CONFIG.fusion.FUSION_TRIGGER_DIST;
                 const dist = p.dist(posMutter.x, posMutter.y,posKind.x,posKind.y);
-                if (dist <20) {
-                    drawFusionShader();
-                }
                 if (bothNear) {
                     fusionProgress = p.min(1.0, fusionProgress + 0.035);
                 } else {
@@ -941,7 +851,7 @@ void main() {
             if (particles[i].life <= 0) particles.splice(i, 1);
         }
         if (fusionProgress > 0.05) {
-            drawFusionShader();
+            drawFusionTarget(time);
         }
         drawEmitterCore(posMutter, "mutter", time);
         drawEmitterCore(posKind, "kind", time);
