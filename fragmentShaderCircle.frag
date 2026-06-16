@@ -1,41 +1,29 @@
-#ifdef GL_ES
-precision mediump float;
-#endif
+precision highp float;
 
-uniform vec2 uResolution;
-uniform vec2 uMutter;
-uniform vec2 uKind;
-uniform float uRadius;
-uniform float uIntensity;
+uniform int objects;
 
-varying vec2 vTexCoord;
+uniform float xs[objects];
+uniform float ys[objects];
+uniform float rs[objects];
 
+varying highp vec2 vPos;
+
+// called once per pixel (equivalent to the body of your for loops over x and y)
 void main() {
-    vec2 pixel = vTexCoord * uResolution;
+    float sum = 0.;
 
-    float d1 = distance(pixel, uMutter);
-    float d2 = distance(pixel, uKind);
-
-    float r = uRadius;
-
-    float field1 = (r * r) / max(d1 * d1, 1.0);
-    float field2 = (r * r) / max(d2 * d2, 1.0);
-
-    float field = field1 + field2;
-
-    float core = smoothstep(1.0, 1.25, field);
-    float glow = smoothstep(0.15, 1.0, field) * 0.45;
-
-    float alpha = (core * 0.85 + glow) * uIntensity;
-
-    if (alpha <= 0.001) {
-        discard;
+    // calculate the sum value for the current pixel (vPos.x, vPos.y)
+    for (int i = 0; i < objects; i++) {
+        float dx = xs[i] - vPos.x;
+        float dy = ys[i] - vPos.y;
+        float d = length(vec2(dx, dy));
+        sum += rs[i] / d;
     }
 
-    vec3 edgeColor = vec3(1.0, 0.25, 0.7);
-    vec3 coreColor = vec3(1.0, 0.82, 0.95);
-
-    vec3 color = mix(edgeColor, coreColor, core);
-
-    gl_FragColor = vec4(color, alpha);
+    // Set the pixel color based on the sum of distances to the balls
+    if (sum > 4.) {
+        gl_FragColor = vec4(vec3(0.95,0.3,0.), 1.);
+    } else {
+        gl_FragColor = vec4(vec3(0.25,0.,0.25), 1.);
+    }
 }

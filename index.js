@@ -105,7 +105,7 @@ const sketch = (p) => {
 
     let scoreFont;
     let layer; //für den Frambuffer
-    //let fusionShader; //für die Shader
+    let fusionShader; //für die Shader
 
 
 
@@ -513,7 +513,6 @@ const sketch = (p) => {
         p.strokeWeight(2);
         drawSmoothCircle(0, 0, r * 2);
 
-
         p.pop();
        // layer.end();
     }
@@ -586,6 +585,7 @@ const sketch = (p) => {
     // ============================================================
     p.setup = () => {
         p.createCanvas(p.windowWidth, p.windowHeight, p.WEBGL);
+
         //pixelDensity(1);
         p.textFont(scoreFont); //für webgl angepasst
         // alpha range 0..1 so the original rgba values port over unchanged
@@ -724,6 +724,12 @@ const sketch = (p) => {
         p.background(CONFIG.background[0], CONFIG.background[1], CONFIG.background[2], CONFIG.trailAlpha);
         // --- Score-Anzeige ---
         const serialActive = isSerialOpen && time - lastSerialAt < CONFIG.serialTimeout;
+        /* p.shader(fusionShader);
+        fusionShader.setUniform("width", p.width);
+        fusionShader.setUniform("height", p.height);
+        fusionShader.setUniform("rs", 2);
+        fusionShader.setUniform("xs", [posMutter.x, posKind.x]);
+        fusionShader.setUniform("ys", [posMutter.y, posKind.y]); */
 
         if (fusionState === FusionState.FUSING) {
             posMutter.set(fusionMeetPoint.x, fusionMeetPoint.y);
