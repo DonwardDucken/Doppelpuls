@@ -18,11 +18,11 @@ const sketch = (p) => {
                 maxSpeed: 6,
                 bpm: 90,
                 vibration: 8,
-                ringBaseSize: 50,
-                ringDecay: 0.004,
+                ringBaseSize: 35,
+                ringDecay: 0.012,
                 ringGrowth: 0.6,
                 ringLineWidth: 1.0,
-                ringIntervalBase: 460,
+                ringIntervalBase: 460*1.25,
                 ringIntervalGain: 260,
                 ringIntervalMin: 120,
                 coreRadius: 9,
@@ -39,10 +39,10 @@ const sketch = (p) => {
                 bpm: 140,
                 vibration: 5,
                 ringBaseSize: 14,
-                ringDecay: 0.014,
+                ringDecay: 0.028,
                 ringGrowth: 0.9,
                 ringLineWidth: 0.5,
-                ringIntervalBase: 130,
+                ringIntervalBase: 130*1.25,
                 ringIntervalGain: 55,
                 ringIntervalMin: 55,
                 coreRadius: 6,
@@ -104,6 +104,9 @@ const sketch = (p) => {
     let lastFusionBellTime = 0;
 
     let scoreFont;
+    let layer; //für den Frambuffer
+    let fusionShader; //für die Shader
+    let fusionLayer;
 
 
 
@@ -374,7 +377,7 @@ const sketch = (p) => {
             p.noFill();
             p.stroke(255, 255, 255, this.life * 0.5);
             p.strokeWeight(1);
-            p.circle(this.x, this.y, this.radius * 2);
+            drawSmoothCircle(this.x, this.y, this.radius * 2);
         }
     }
 
@@ -402,18 +405,17 @@ const sketch = (p) => {
         }
         draw() {
             const ctx = p.drawingContext;
-            for(let i=2;i>0;i--){
+            for(let i=3;i>0;i--){
                 p.noFill();
                 p.stroke(this.color[0],this.color[1],this.color[2],this.life * 0.08 * i);
                 p.strokeWeight(this.lineWidth + i * 2);
-                p.circle(this.x,this.y,this.size * 2);
+                drawSmoothCircle(this.x,this.y,this.size * 2);
             }
             p.noFill();
             p.blendMode(p.ADD);
             p.stroke(this.color[0], this.color[1], this.color[2], this.life * 0.8 * this.fusionDim);
             p.strokeWeight(this.lineWidth);
-            p.circle(this.x, this.y, this.size * 2);
-
+            drawSmoothCircle(this.x, this.y, this.size * 2);
             // push()/pop() do NOT restore raw drawingContext shadow state — reset manually
 
         }
@@ -422,6 +424,21 @@ const sketch = (p) => {
     // ============================================================
     // RENDER HELPERS
     // ============================================================
+    // p5's built-in circle()/ellipse() caps stroke detail at 50 vertices
+    // in WEBGL mode (anything above that drops the stroke entirely).
+    // For big, fast-growing rings that cap shows up as flat facets.
+    // This draws our own polygon instead, with segment count scaled to
+    // diameter, so large circles stay round at any size.
+    function drawSmoothCircle(x, y, d) {
+        const segments = p.constrain(Math.ceil(d * 0.35), 24, 160);
+        p.beginShape();
+        for (let i = 0; i <= segments; i++) {
+            const a = (p.TWO_PI * i) / segments;
+            p.vertex(x + (d / 2) * p.cos(a), y + (d / 2) * p.sin(a));
+        }
+        p.endShape(p.CLOSE);
+    }
+
     function drawEmitterCore(pos, type, time) {
         const cfg = CONFIG.emitters[type];
         const radius = cfg.coreRadius + p.sin(time * cfg.corePulseFreq) * 2;
@@ -434,6 +451,7 @@ const sketch = (p) => {
         const pulse = 1 + p.sin(time * f.spherePulseFreq) * f.spherePulseAmp;
         const baseRadius = f.sphereMaxRadius * intensity;
         const ctx = p.drawingContext;
+        //layer.begin();
         p.push();
         p.translate(cx, cy);
         //ctx.shadowBlur = 45 * intensity;
@@ -442,26 +460,69 @@ const sketch = (p) => {
             p.noFill();
             p.stroke(f.sphereColor[0],f.sphereColor[1],f.sphereColor[2],intensity * 0.08 * i);
             p.strokeWeight(4);
-            p.circle(0,0,(baseRadius * pulse + i * 6) * 2);
+            drawSmoothCircle(0,0,(baseRadius * pulse + i * 6) * 2);
         }
         //p.noFill();
         //p.stroke(f.sphereColor[0], f.sphereColor[1], f.sphereColor[2], intensity * 0.9);
         //p.strokeWeight(3 * intensity);
         // p.circle(0, 0, baseRadius * pulse * 2); //ohne WEBGL
         //p.sphere(baseRadius*pulse);
-        p.blendMode(p.ADD);
+        //p.blendMode(p.ADD);
         //ctx.shadowBlur = 0;
         p.pop();
+        //layer.end();
     }
 
     function drawGlowCircle(x,y,r,col){
         p.noStroke();
         for(let i=5;i>0;i--){
             p.fill(col[0],col[1],col[2],0.04);
-            p.circle(x,y,r*2 + i*20);
+            drawSmoothCircle(x,y,r*2 + i*20);
         }
         p.fill(col[0],col[1],col[2],1);
-        p.circle(x,y,r*2);
+        drawSmoothCircle(x,y,r*2);
+    }
+
+    function toShaderPosition(pos) {
+        return [
+            pos.x + fusionLayer.width / 2,
+            pos.y + fusionLayer.height / 2
+        ];
+    }
+
+    function drawFusionShader() {
+        if (!fusionShader || !fusionLayer) return;
+
+        const distance = p.dist(posMutter.x, posMutter.y, posKind.x, posKind.y);
+        const closeness = p.constrain(1 - distance / 260, 0, 1);
+        const intensity = p.max(fusionProgress, closeness);
+
+        if (intensity <= 0.01) return;
+
+        fusionLayer.clear();
+        fusionLayer.shader(fusionShader);
+
+        fusionShader.setUniform("uResolution", [
+            fusionLayer.width,
+            fusionLayer.height
+        ]);
+
+        fusionShader.setUniform("uRadius", 85 + intensity * 35);
+        fusionShader.setUniform("uIntensity", intensity);
+        fusionShader.setUniform("uMutter", toShaderPosition(posMutter));
+        fusionShader.setUniform("uKind", toShaderPosition(posKind));
+
+        fusionLayer.noStroke();
+        fusionLayer.rect(-1, -1, 2, 2);
+
+        fusionLayer.resetShader();
+
+        p.push();
+        p.blendMode(p.ADD);
+        p.resetShader();
+        p.imageMode(p.CENTER);
+        p.image(fusionLayer, 0, 0, p.width, p.height);
+        p.pop();
     }
     // =============================================
     // FUSION TARGET (WEBGL VERSION)
@@ -469,6 +530,7 @@ const sketch = (p) => {
     function drawFusionTarget(time) {
         if (!fusionTarget) return;
 
+        //layer.begin();
         p.push();
 
         // In WEBGL: sauber in Z-Ebene arbeiten
@@ -492,10 +554,11 @@ const sketch = (p) => {
         p.noFill();
         p.stroke(255, 255, 255, alpha);
         p.strokeWeight(2);
-        p.ellipse(0, 0, r * 2, r * 2);
+        drawSmoothCircle(0, 0, r * 2);
 
 
         p.pop();
+       // layer.end();
     }
 
     function triggerVibration(intensity) {
@@ -566,6 +629,13 @@ const sketch = (p) => {
     // ============================================================
     p.setup = () => {
         p.createCanvas(p.windowWidth, p.windowHeight, p.WEBGL);
+        pixelDensity(1);
+        layer = p.createFramebuffer();
+        fusionLayer = p.createGraphics(p.windowWidth, p.windowHeight, p.WEBGL);
+        fusionLayer.pixelDensity(1);
+        fusionLayer.colorMode(p.RGB, 255, 255, 255, 1);
+        fusionLayer.noStroke();
+        fusionShader = fusionLayer.createShader(vertexShaderSource, fragmentShaderSource);
         p.textFont(scoreFont); //für webgl angepasst
         // alpha range 0..1 so the original rgba values port over unchanged
         p.colorMode(p.RGB, 255, 255, 255, 1);
@@ -587,13 +657,51 @@ const sketch = (p) => {
         scoreFont = p.loadFont(
             "https://cdnjs.cloudflare.com/ajax/libs/topcoat/0.8.0/font/SourceCodePro-Regular.otf"
         );
+        //fusionShader = p.createShader(vertexShaderCircle, fragmentShaderCircle);
+        //fusionShader = p.loadShader('vertexShaderCircle.vert','fragmentShaderCircle.frag');
     };
+    const vertexShaderSource = `
+#ifdef GL_ES
+precision mediump float;
+#endif
 
+attribute vec3 aPosition;
+attribute vec2 aTexCoord;
+
+varying vec2 vTexCoord;
+
+void main() {
+    vTexCoord = aTexCoord;
+
+    vec4 positionVec4 = vec4(aPosition, 1.0);
+    positionVec4.xy = positionVec4.xy * 2.0 - 1.0;
+
+    gl_Position = positionVec4;
+}
+`;
+    const fragmentShaderSource = `
+#ifdef GL_ES
+precision mediump float;
+#endif
+
+varying vec2 vTexCoord;
+
+void main() {
+    gl_FragColor = vec4(vTexCoord.x, vTexCoord.y, 1.0, 0.6);
+}
+`;
 
     p.windowResized = () => {
         // a resize event can fire before setup() initialised the state
         if (!posMutter || !posKind) return;
         p.resizeCanvas(p.windowWidth, p.windowHeight);
+
+        fusionLayer = p.createGraphics(p.windowWidth, p.windowHeight, p.WEBGL);
+        fusionLayer.pixelDensity(1);
+        fusionLayer.colorMode(p.RGB, 255, 255, 255, 1);
+        fusionLayer.noStroke();
+        fusionShader = fusionLayer.createShader(vertexShaderSource, fragmentShaderSource);
+
         startMutter = {x: -p.width * 0.3,y: p.height * 0.35}; //WEBGL
         startKind = {x: p.width * 0.3,y: p.height * 0.35}; //WEBGL
         // keep emitters inside the new bounds (fixes off-screen drift on resize)
@@ -698,6 +806,7 @@ const sketch = (p) => {
         const time = p.millis();
         const f = CONFIG.fusion;
 
+
         // semi-transparent fill leaves a fading trail of previous frames
         p.background(CONFIG.background[0], CONFIG.background[1], CONFIG.background[2], CONFIG.trailAlpha);
         // --- Score-Anzeige ---
@@ -716,6 +825,7 @@ const sketch = (p) => {
                 returnStartTime = time;
                 scoreMutter = Math.min(scoreMutter + 1, SCORE_MAX);
                 scoreKind   = Math.min(scoreKind + 1, SCORE_MAX);
+                spawnFusionTarget();
                 if (scoreMutter >= SCORE_MAX) {
                     scoreMutter = 0;
                     scoreKind = 0;
@@ -801,7 +911,10 @@ const sketch = (p) => {
                 const distM = p.dist(posMutter.x, posMutter.y, fusionTarget.x, fusionTarget.y);
                 const distK = p.dist(posKind.x,   posKind.y,   fusionTarget.x, fusionTarget.y);
                 const bothNear = distM < CONFIG.fusion.FUSION_TRIGGER_DIST && distK < CONFIG.fusion.FUSION_TRIGGER_DIST;
-
+                const dist = p.dist(posMutter.x, posMutter.y,posKind.x,posKind.y);
+                if (dist <20) {
+                    drawFusionShader();
+                }
                 if (bothNear) {
                     fusionProgress = p.min(1.0, fusionProgress + 0.035);
                 } else {
@@ -813,7 +926,6 @@ const sketch = (p) => {
                 fusionHoldStartTime = time;
                 lastFusionBellTime = time;
                 fusionMeetPoint.set((posMutter.x + posKind.x) / 2, (posMutter.y + posKind.y) / 2);
-                spawnFusionTarget();
                 audio.fusionBell();
             }
         }
@@ -828,7 +940,9 @@ const sketch = (p) => {
             particles[i].draw();
             if (particles[i].life <= 0) particles.splice(i, 1);
         }
-
+        if (fusionProgress > 0.05) {
+            drawFusionShader();
+        }
         drawEmitterCore(posMutter, "mutter", time);
         drawEmitterCore(posKind, "kind", time);
 
